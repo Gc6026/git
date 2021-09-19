@@ -252,11 +252,10 @@ static void changed_files(struct hashmap *result, const char *index_path,
 	strbuf_release(&buf);
 }
 
-static NORETURN void exit_cleanup(const char *tmpdir, int exit_code)
+static NORETURN void exit_cleanup(struct strbuf *buf, int exit_code)
 {
-	struct strbuf buf = STRBUF_INIT;
-	strbuf_addstr(&buf, tmpdir);
-	remove_dir_recursively(&buf, 0);
+	remove_dir_recursively(buf, 0);
+	strbuf_release(buf);
 	if (exit_code)
 		warning(_("failed: %d"), exit_code);
 	exit(exit_code);
@@ -333,11 +332,11 @@ static int checkout_path(unsigned mode, struct object_id *oid,
 static int run_dir_diff(const char *extcmd, int symlinks, const char *prefix,
 			struct child_process *child)
 {
-	char tmpdir[PATH_MAX];
 	struct strbuf info = STRBUF_INIT, lpath = STRBUF_INIT;
 	struct strbuf rpath = STRBUF_INIT, buf = STRBUF_INIT;
 	struct strbuf ldir = STRBUF_INIT, rdir = STRBUF_INIT;
 	struct strbuf wtdir = STRBUF_INIT;
+	struct strbuf tmpdir = STRBUF_INIT;
 	char *lbase_dir, *rbase_dir;
 	size_t ldir_len, rdir_len, wtdir_len;
 	const char *workdir, *tmp;
@@ -360,11 +359,13 @@ static int run_dir_diff(const char *extcmd, int symlinks, const char *prefix,
 
 	/* Setup temp directories */
 	tmp = getenv("TMPDIR");
-	xsnprintf(tmpdir, sizeof(tmpdir), "%s/git-difftool.XXXXXX", tmp ? tmp : "/tmp");
-	if (!mkdtemp(tmpdir))
-		return error("could not create '%s'", tmpdir);
-	strbuf_addf(&ldir, "%s/left/", tmpdir);
-	strbuf_addf(&rdir, "%s/right/", tmpdir);
+	strbuf_add_absolute_path(&tmpdir, tmp ? tmp : "/tmp");
+	strbuf_trim_trailing_dir_sep(&tmpdir);
+	strbuf_addstr(&tmpdir, "/git-difftool.XXXXXX");
+	if (!mkdtemp(tmpdir.buf))
+		return error("could not create '%s'", tmpdir.buf);
+	strbuf_addf(&ldir, "%s/left/", tmpdir.buf);
+	strbuf_addf(&rdir, "%s/right/", tmpdir.buf);
 	strbuf_addstr(&wtdir, workdir);
 	if (!wtdir.len || !is_dir_sep(wtdir.buf[wtdir.len - 1]))
 		strbuf_addch(&wtdir, '/');
@@ -614,7 +615,7 @@ static int run_dir_diff(const char *extcmd, int symlinks, const char *prefix,
 		if (!indices_loaded) {
 			struct lock_file lock = LOCK_INIT;
 			strbuf_reset(&buf);
-			strbuf_addf(&buf, "%s/wtindex", tmpdir);
+			strbuf_addf(&buf, "%s/wtindex", tmpdir.buf);
 			if (hold_lock_file_for_update(&lock, buf.buf, 0) < 0 ||
 			    write_locked_index(&wtindex, &lock, COMMIT_LOCK)) {
 				ret = error("could not write %s", buf.buf);
@@ -644,11 +645,11 @@ static int run_dir_diff(const char *extcmd, int symlinks, const char *prefix,
 	}
 
 	if (err) {
-		warning(_("temporary files exist in '%s'."), tmpdir);
+		warning(_("temporary files exist in '%s'."), tmpdir.buf);
 		warning(_("you may want to cleanup or recover these."));
 		exit(1);
 	} else
-		exit_cleanup(tmpdir, rc);
+		exit_cleanup(&tmpdir, rc);
 
 finish:
 	if (fp)
@@ -660,6 +661,7 @@ finish:
 	strbuf_release(&rdir);
 	strbuf_release(&wtdir);
 	strbuf_release(&buf);
+	strbuf_release(&tmpdir);
 
 	return ret;
 }
