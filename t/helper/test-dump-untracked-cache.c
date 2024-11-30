@@ -1,3 +1,5 @@
+#define USE_THE_REPOSITORY_VARIABLE
+
 #include "test-tool.h"
 #include "dir.h"
 #include "hex.h"
@@ -66,5 +68,7 @@ int cmd__dump_untracked_cache(int ac UNUSED, const char **av UNUSED)
 	printf("flags %08x\n", uc->dir_flags);
 	if (uc->root)
 		dump(uc->root, &base);
+
+	strbuf_release(&base);
 	return 0;
 }

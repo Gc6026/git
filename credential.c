@@ -1,3 +1,5 @@
+#define USE_THE_REPOSITORY_VARIABLE
+
 #include "git-compat-util.h"
 #include "abspath.h"
 #include "config.h"
@@ -11,6 +13,8 @@
 #include "strbuf.h"
 #include "urlmatch.h"
 #include "git-compat-util.h"
+#include "trace2.h"
+#include "repository.h"
 
 void credential_init(struct credential *c)
 {
@@ -20,12 +24,11 @@ void credential_init(struct credential *c)
 
 void credential_clear(struct credential *c)
 {
+	credential_clear_secrets(c);
 	free(c->protocol);
 	free(c->host);
 	free(c->path);
 	free(c->username);
-	free(c->password);
-	free(c->credential);
 	free(c->oauth_refresh_token);
 	free(c->authtype);
 	string_list_clear(&c->helpers, 0);
@@ -250,14 +253,36 @@ static char *credential_ask_one(const char *what, struct credential *c,
 	return xstrdup(r);
 }
 
-static void credential_getpass(struct credential *c)
+static int credential_getpass(struct credential *c)
 {
+	int interactive;
+	char *value;
+	if (!git_config_get_maybe_bool("credential.interactive", &interactive) &&
+	    !interactive) {
+		trace2_data_intmax("credential", the_repository,
+				   "interactive/skipped", 1);
+		return -1;
+	}
+	if (!git_config_get_string("credential.interactive", &value)) {
+		int same = !strcmp(value, "never");
+		free(value);
+		if (same) {
+			trace2_data_intmax("credential", the_repository,
+					   "interactive/skipped", 1);
+			return -1;
+		}
+	}
+
+	trace2_region_enter("credential", "interactive", the_repository);
 	if (!c->username)
 		c->username = credential_ask_one("Username", c,
 						 PROMPT_ASKPASS|PROMPT_ECHO);
 	if (!c->password)
 		c->password = credential_ask_one("Password", c,
 						 PROMPT_ASKPASS);
+	trace2_region_leave("credential", "interactive", the_repository);
+
+	return 0;
 }
 
 int credential_has_capability(const struct credential_capability *capa,
@@ -479,9 +504,15 @@ void credential_fill(struct credential *c, int all_capabilities)
 
 	for (i = 0; i < c->helpers.nr; i++) {
 		credential_do(c, c->helpers.items[i].string, "get");
+
 		if (c->password_expiry_utc < time(NULL)) {
-			/* Discard expired password */
-			FREE_AND_NULL(c->password);
+			/*
+			 * Don't use credential_clear() here: callers such as
+			 * cmd_credential() expect to still be able to call
+			 * credential_write() on a struct credential whose
+			 * secrets have expired.
+			 */
+			credential_clear_secrets(c);
 			/* Reset expiry to maintain consistency */
 			c->password_expiry_utc = TIME_MAX;
 		}
@@ -494,8 +525,8 @@ void credential_fill(struct credential *c, int all_capabilities)
 			    c->helpers.items[i].string);
 	}
 
-	credential_getpass(c);
-	if (!c->username && !c->password && !c->credential)
+	if (credential_getpass(c) ||
+	    (!c->username && !c->password && !c->credential))
 		die("unable to get password from user");
 }
 
@@ -528,9 +559,8 @@ void credential_reject(struct credential *c)
 	for (i = 0; i < c->helpers.nr; i++)
 		credential_do(c, c->helpers.items[i].string, "erase");
 
+	credential_clear_secrets(c);
 	FREE_AND_NULL(c->username);
-	FREE_AND_NULL(c->password);
-	FREE_AND_NULL(c->credential);
 	FREE_AND_NULL(c->oauth_refresh_token);
 	c->password_expiry_utc = TIME_MAX;
 	c->approved = 0;

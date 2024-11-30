@@ -1,3 +1,4 @@
+#define USE_THE_REPOSITORY_VARIABLE
 #include "builtin.h"
 #include "config.h"
 #include "diff.h"
@@ -70,7 +71,7 @@ static int get_one_patchid(struct object_id *next_oid, struct object_id *result,
 	git_hash_ctx ctx;
 
 	the_hash_algo->init_fn(&ctx);
-	oidclr(result);
+	oidclr(result, the_repository->hash_algo);
 
 	while (strbuf_getwholeline(line_buf, stdin, '\n') != EOF) {
 		char *line = line_buf->buf;
@@ -166,7 +167,7 @@ static int get_one_patchid(struct object_id *next_oid, struct object_id *result,
 	}
 
 	if (!found_next)
-		oidclr(next_oid);
+		oidclr(next_oid, the_repository->hash_algo);
 
 	flush_one_hunk(result, &ctx);
 
@@ -179,7 +180,7 @@ static void generate_id_list(int stable, int verbatim)
 	int patchlen;
 	struct strbuf line_buf = STRBUF_INIT;
 
-	oidclr(&oid);
+	oidclr(&oid, the_repository->hash_algo);
 	while (!feof(stdin)) {
 		patchlen = get_one_patchid(&n, &result, &line_buf, stable, verbatim);
 		flush_current_id(patchlen, &oid, &result);
@@ -214,7 +215,10 @@ static int git_patch_id_config(const char *var, const char *value,
 	return git_default_config(var, value, ctx, cb);
 }
 
-int cmd_patch_id(int argc, const char **argv, const char *prefix)
+int cmd_patch_id(int argc,
+		 const char **argv,
+		 const char *prefix,
+		 struct repository *repo UNUSED)
 {
 	/* if nothing is set, default to unstable */
 	struct patch_id_opts config = {0, 0};

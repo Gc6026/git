@@ -3,7 +3,7 @@
  *
  * Copyright (C) Linus Torvalds 2006
  */
-
+#define USE_THE_REPOSITORY_VARIABLE
 #include "builtin.h"
 #include "advice.h"
 #include "config.h"
@@ -15,7 +15,7 @@
 #include "object-name.h"
 #include "parse-options.h"
 #include "read-cache.h"
-#include "repository.h"
+
 #include "string-list.h"
 #include "setup.h"
 #include "sparse-index.h"
@@ -261,7 +261,10 @@ static struct option builtin_rm_options[] = {
 	OPT_END(),
 };
 
-int cmd_rm(int argc, const char **argv, const char *prefix)
+int cmd_rm(int argc,
+	   const char **argv,
+	   const char *prefix,
+	   struct repository *repo UNUSED)
 {
 	struct lock_file lock_file = LOCK_INIT;
 	int i, ret = 0;
@@ -377,7 +380,7 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 	if (!force) {
 		struct object_id oid;
 		if (repo_get_oid(the_repository, "HEAD", &oid))
-			oidclr(&oid);
+			oidclr(&oid, the_repository->hash_algo);
 		if (check_local_mod(&oid, index_only))
 			exit(1);
 	}

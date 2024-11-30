@@ -5,6 +5,7 @@ test_description='git log'
 GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=main
 export GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME
 
+TEST_PASSES_SANITIZE_LEAK=true
 . ./test-lib.sh
 . "$TEST_DIRECTORY/lib-gpg.sh"
 . "$TEST_DIRECTORY/lib-terminal.sh"
@@ -1235,6 +1236,30 @@ test_expect_success 'log.abbrevCommit configuration' '
 	test_cmp expect.whatchanged.abbrev actual &&
 	git whatchanged --no-abbrev-commit >actual &&
 	test_cmp expect.whatchanged.full actual
+'
+
+test_expect_success '--abbrev-commit with core.abbrev=false' '
+	git log --no-abbrev >expect &&
+	git -c core.abbrev=false log --abbrev-commit >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success '--abbrev-commit with --no-abbrev' '
+	git log --no-abbrev >expect &&
+	git log --abbrev-commit --no-abbrev >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success '--abbrev-commit with core.abbrev=9000' '
+	git log --no-abbrev >expect &&
+	git -c core.abbrev=9000 log --abbrev-commit >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success '--abbrev-commit with --abbrev=9000' '
+	git log --no-abbrev >expect &&
+	git log --abbrev-commit --abbrev=9000 >actual &&
+	test_cmp expect actual
 '
 
 test_expect_success 'show added path under "--follow -M"' '
